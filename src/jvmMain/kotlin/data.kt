@@ -4,6 +4,11 @@ import org.apache.bcel.classfile.JavaClass
 import org.apache.bcel.generic.ArrayType
 import org.apache.bcel.generic.ObjectType
 import org.apache.bcel.generic.Type
+import org.apache.bcel.util.ClassPath
+import org.apache.bcel.util.Repository
+import org.apache.bcel.util.SyntheticRepository
+import java.util.Objects
+import javax.naming.OperationNotSupportedException
 
 class JniMethodHead(
     val classQualname: String,
@@ -40,7 +45,7 @@ enum class JniType(val cType: String) {
     THROWABLE("jthrowable")
 }
 
-fun java2jniType(t: Type): JniType = when (t) {
+fun java2jniType(t: Type, typesResolver: Type2ClassMap): JniType = when (t) {
     Type.BOOLEAN -> JniType.BOOLEAN
     Type.BYTE -> JniType.BYTE
     Type.CHAR -> JniType.CHAR
@@ -66,18 +71,18 @@ fun java2jniType(t: Type): JniType = when (t) {
     }
 
     is ObjectType -> when {
-        t.subclassOf(Type.STRING) -> JniType.STRING
-        t.subclassOf(Type.THROWABLE) -> JniType.THROWABLE
-        t.subclassOf(Type.CLASS) -> JniType.CLASS
+        typesResolver[t].instanceOf(typesResolver[Type.STRING]) -> JniType.STRING
+        typesResolver[t].instanceOf(typesResolver[Type.THROWABLE]) -> JniType.THROWABLE
+        typesResolver[t].instanceOf(typesResolver[Type.CLASS]) -> JniType.CLASS
         else -> JniType.OBJECT
     }
 
     else -> JniType.OBJECT
 }
 
-fun Array<Type>.map2JniTypes(): Array<JniType> = Array(this.size) { i -> java2jniType(this[i]) }
+fun Array<Type>.map2JniTypes(typesResolver: Type2ClassMap): Array<JniType> = Array(this.size) { i -> java2jniType(this[i], typesResolver) }
 
-fun JavaClass.extractNativeMethods(): List<JniMethodHead> = this.methods
+fun JavaClass.extractNativeMethods(typesResolver: Type2ClassMap): List<JniMethodHead> = this.methods
     .filter { m -> m.isNative }
     .map { m ->
         JniMethodHead(
@@ -86,11 +91,28 @@ fun JavaClass.extractNativeMethods(): List<JniMethodHead> = this.methods
             signatureOf(m),
             mangleLongName(this, m),
             m.isStatic,
-            java2jniType(m.returnType),
-            m.argumentTypes.map2JniTypes()
+            java2jniType(m.returnType, typesResolver),
+            m.argumentTypes.map2JniTypes(typesResolver)
         )
     }
 
-fun Array<JavaClass>.extractNativeMethods(): List<JniMethodHead> = this.flatMap { c -> c.extractNativeMethods() }
-fun Iterable<JavaClass>.extractNativeMethods(): List<JniMethodHead> = this.flatMap { c -> c.extractNativeMethods() }
-fun Sequence<JavaClass>.extractNativeMethods(): Sequence<JniMethodHead> = this.flatMap { c -> c.extractNativeMethods() }
+fun Array<JavaClass>.extractNativeMethods(typesResolver: Type2ClassMap): List<JniMethodHead> = this.flatMap { c -> c.extractNativeMethods(typesResolver) }
+fun Iterable<JavaClass>.extractNativeMethods(typesResolver: Type2ClassMap): List<JniMethodHead> = this.flatMap { c -> c.extractNativeMethods(typesResolver) }
+fun Sequence<JavaClass>.extractNativeMethods(typesResolver: Type2ClassMap): Sequence<JniMethodHead> = this.flatMap { c -> c.extractNativeMethods(typesResolver) }
+
+
+class Type2ClassMap {
+    private val map = HashMap<String, JavaClass>()
+    private val systemCp = SyntheticRepository.getInstance()
+
+    operator fun set(name: String, type: JavaClass) {
+        this.map[name] = type
+    }
+
+
+    operator fun get(name: String): JavaClass =
+        this.map[name] ?: this.systemCp.loadClass(name) ?: throw ClassNotFoundException(name)
+
+    operator fun get(type: ObjectType): JavaClass = this[type.className]
+}
+

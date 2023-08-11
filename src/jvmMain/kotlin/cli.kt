@@ -4,6 +4,7 @@ package io.github.landgrafhomyak.classh
 
 import org.apache.bcel.classfile.ClassParser
 import org.apache.bcel.classfile.JavaClass
+import org.apache.bcel.util.Repository
 import java.io.File
 import java.io.FileOutputStream
 import java.io.PrintStream
@@ -263,12 +264,17 @@ fun main(argv: Array<String>) {
         }
     }
 
+    val repo = Type2ClassMap()
+    for (c in data) {
+        repo[c.className] = c
+    }
+
     val data2export: List<JavaClass> = if (args.exportAll) data else data.filter { c -> c.className in args.exportClasses }
 
     if (args.outputHeader != null) {
         generateHeader(
             args.generatorOptions,
-            data2export.extractNativeMethods(),
+            data2export.extractNativeMethods(repo),
             PrintStream(FileOutputStream(args.outputHeader!!, false))
         )
     } else if (args.outputDirectory != null) {
@@ -279,7 +285,7 @@ fun main(argv: Array<String>) {
             return
         }
         data2export
-            .groupBy({ c -> c.className.replace(re, "_") }) { c -> c.extractNativeMethods() }
+            .groupBy({ c -> c.className.replace(re, "_") }) { c -> c.extractNativeMethods(repo) }
             .entries.associate { (c, n) -> c to n.flatten() }
             .asSequence()
             .onEach { (c, n) ->
@@ -292,7 +298,7 @@ fun main(argv: Array<String>) {
     } else {
         generateHeader(
             args.generatorOptions,
-            data2export.extractNativeMethods(),
+            data2export.extractNativeMethods(repo),
             stdOutHeader!!
         )
     }
