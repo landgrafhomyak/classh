@@ -5,7 +5,7 @@ import org.apache.bcel.generic.ArrayType
 import org.apache.bcel.generic.ObjectType
 import org.apache.bcel.generic.Type
 
-private fun signatureOfQualname(string: String): String = string.replace('_', '/')
+private fun signatureOfQualname(string: String): String = string.replace('.', '/')
 
 private fun signatureOf(t: Type): String = when (t) {
     Type.BOOLEAN -> "Z"
